@@ -54,8 +54,7 @@ func get_before_after(link_header string) (before string, after string) {
 
 func check_rate_limit() {
 	if time.Now().UnixNano() < rate_limit_refresh_time.UnixNano() {
-		log.Println("The ship needs to wait until " + rate_limit_refresh_time.String() + " as it has hit an iceberg...")
-		os.Exit(1)
+		log.Fatal("The ship needs to wait until " + rate_limit_refresh_time.String() + " as it has hit an iceberg...")
 	}
 }
 
@@ -67,11 +66,11 @@ func get_enterprise_logs(
 	after_cursor string) (
 	logs []map[string]interface{},
 	before string, after string,
-	rate_limit int, rate_limit_reset_time time.Time, err error) {
+	rate_limit int, rate_limit_reset_time time.Time) {
 
 	check_rate_limit()
 
-	resp, err := github_client.R().
+	resp, _ := github_client.R().
 		SetQueryParams(map[string]string{
 			"per_page": "100",
 			"include":  "all",
@@ -81,24 +80,26 @@ func get_enterprise_logs(
 		}).
 		Get("/enterprises/" + enterprise + "/audit-log")
 
+	if resp.StatusCode() != 200 {
+		log.Fatal(string(resp.Body()))
+	}
+
 	rate_limit, _ = strconv.Atoi(resp.Header().Get("X-RateLimit-Remaining"))
 	rate_limit_reset_ts, _ := strconv.ParseInt(resp.Header().Get("X-RateLimit-Reset"), 10, 64)
 	rate_limit_reset_time = time.Unix(0, rate_limit_reset_ts*int64(time.Second))
 	before, after = get_before_after(resp.Header().Get("Link"))
 	sync_rate_limit(rate_limit, rate_limit_reset_time)
 	json.Unmarshal([]byte(resp.Body()), &logs)
-	return logs, before, after, rate_limit, rate_limit_reset_time, err
+	return logs, before, after, rate_limit, rate_limit_reset_time
 }
 
 func get_github_client() *resty.Client {
 	github_api_endpoint := "https://api.github.com"
 	if github_token == "" {
-		log.Println("Please set GHLF_GITHUB_ENTERPRISE_ADMIN_TOKEN")
-		os.Exit(1)
+		log.Fatal("Please set GHLF_GITHUB_ENTERPRISE_ADMIN_TOKEN")
 	}
 	if github_enterprise == "" {
-		log.Println("Please set GHLF_GITHUB_ENTERPRISE_ID")
-		os.Exit(1)
+		log.Fatal("Please set GHLF_GITHUB_ENTERPRISE_ID")
 	}
 
 	return resty.New().SetHostURL(github_api_endpoint).
@@ -109,8 +110,7 @@ func get_github_client() *resty.Client {
 
 func get_log_forward_client() *resty.Client {
 	if log_forward_endpoint_url == "" || log_forward_endpoint_auth_header == "" {
-		log.Println("Please set GHLF_LOGGING_ENDPOINT_URL and GHLF_LOGGING_ENDPOINT_AUTH_HEADER to forward logs.")
-		os.Exit(1)
+		log.Fatal("Please set GHLF_LOGGING_ENDPOINT_URL and GHLF_LOGGING_ENDPOINT_AUTH_HEADER to forward logs.")
 	}
 	return resty.New().SetHostURL(log_forward_endpoint_url).
 		SetHeader("User-Agent", ghlf_user_agent).
@@ -186,28 +186,27 @@ func process_recent_logs(github_client resty.Client, log_forward_client resty.Cl
 	cursor := get_last_cursor()
 	if cursor == "" {
 		log.Println("No bookmark found locally. Starting fresh...")
-		_, _, after, _, _, _ := get_enterprise_logs(github_client, github_enterprise, "", "", "")
+		_, _, after, _, _ := get_enterprise_logs(github_client, github_enterprise, "", "", "")
 		if after != "" {
 			persist_cursor(after)
 			process_recent_logs(github_client, log_forward_client)
 		} else {
-			log.Println("The \"after\" cursor was supposed to be available but was not returned")
-			os.Exit(1)
+			log.Fatal("The \"after\" cursor was supposed to be available but was not returned")
 		}
 	} else {
-		logs, _, after, _, _, _ := get_enterprise_logs(github_client, github_enterprise, "asc", "", cursor)
-		last_log := logs[len(logs)-1]
-		last_log_time := get_log_time(last_log)
+		audit_logs, _, after, _, _ := get_enterprise_logs(github_client, github_enterprise, "asc", "", cursor)
 		if after == "" {
 			log.Println("No new logs to process...")
 		} else {
+			last_log := audit_logs[len(audit_logs)-1]
+			last_log_time := get_log_time(last_log)
 			log.Println("Attempting to process logs after: " + last_log_time.String() + " [Cursor: " + cursor + "]")
 		}
 		for after != "" {
 			persist_cursor(after)
-			logs, _, after, _, _, _ = get_enterprise_logs(github_client, github_enterprise, "asc", "", after)
-			log.Printf("Pushing logs (%d events): From "+get_log_time(logs[0]).String()+" to "+get_log_time(logs[len(logs)-1]).String()+"\n", len(logs))
-			postLogs(log_forward_client, logs)
+			audit_logs, _, after, _, _ = get_enterprise_logs(github_client, github_enterprise, "asc", "", after)
+			log.Printf("Pushing logs (%d events): From "+get_log_time(audit_logs[0]).String()+" to "+get_log_time(audit_logs[len(audit_logs)-1]).String()+"\n", len(audit_logs))
+			postLogs(log_forward_client, audit_logs)
 		}
 	}
 }
