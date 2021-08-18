@@ -201,7 +201,7 @@ func process_recent_logs(github_client resty.Client, log_forward_client resty.Cl
 		for after != "" {
 			persist_cursor(after)
 			logs, _, after, _, _, _ = get_enterprise_logs(github_client, github_enterprise, "asc", "", after)
-			log.Printf("Pushing logs (%d events): From "+get_log_time(logs[0]).String()+" to "+get_log_time(logs[len(logs)-1]).String(), len(logs))
+			log.Printf("Pushing logs (%d events): From "+get_log_time(logs[0]).String()+" to "+get_log_time(logs[len(logs)-1]).String()+"\n", len(logs))
 			postLogs(log_forward_client, logs)
 		}
 	}
@@ -214,7 +214,8 @@ func main() {
 	if err == nil && interval > 0 {
 		for true {
 			process_recent_logs(*github_client, *log_forward_client)
-			time.Sleep(time.Duration(interval) * time.Minute)
+			log.Printf("Waiting for %d seconds before next iteration...", interval)
+			time.Sleep(time.Duration(interval) * time.Second)
 		}
 	} else {
 		process_recent_logs(*github_client, *log_forward_client)
