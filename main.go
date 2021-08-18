@@ -185,10 +185,15 @@ func sync_rate_limit(rate_limit int, next_limit_refresh_time time.Time) {
 func process_recent_logs(github_client resty.Client, log_forward_client resty.Client) {
 	cursor := get_last_cursor()
 	if cursor == "" {
-		log.Println("No cursor found. Starting fresh...")
+		log.Println("No bookmark found locally. Starting fresh...")
 		_, _, after, _, _, _ := get_enterprise_logs(github_client, github_enterprise, "", "", "")
-		persist_cursor(after)
-		process_recent_logs(github_client, log_forward_client)
+		if after != "" {
+			persist_cursor(after)
+			process_recent_logs(github_client, log_forward_client)
+		} else {
+			log.Println("The \"after\" cursor was supposed to be available but was not returned")
+			os.Exit(1)
+		}
 	} else {
 		logs, _, after, _, _, _ := get_enterprise_logs(github_client, github_enterprise, "asc", "", cursor)
 		last_log := logs[len(logs)-1]
