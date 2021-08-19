@@ -117,7 +117,7 @@ func get_log_forward_client() *resty.Client {
 		SetHeader("Authorization", log_forward_endpoint_auth_header)
 }
 
-func postLogs(log_forward_client resty.Client, logs []map[string]interface{}) {
+func push_logs(log_forward_client resty.Client, logs []map[string]interface{}) {
 	log_forward_client.R().
 		SetBody(logs).
 		Post("")
@@ -198,15 +198,12 @@ func process_recent_logs(github_client resty.Client, log_forward_client resty.Cl
 		if after == "" {
 			log.Println("No new logs to process...")
 		} else {
-			last_log := audit_logs[len(audit_logs)-1]
-			last_log_time := get_log_time(last_log)
-			log.Println("Attempting to process logs after: " + last_log_time.String() + " [Cursor: " + cursor + "]")
-		}
-		for after != "" {
-			persist_cursor(after)
-			audit_logs, _, after, _, _ = get_enterprise_logs(github_client, github_enterprise, "asc", "", after)
-			log.Printf("Pushing logs (%d events): From "+get_log_time(audit_logs[0]).String()+" to "+get_log_time(audit_logs[len(audit_logs)-1]).String()+"\n", len(audit_logs))
-			postLogs(log_forward_client, audit_logs)
+			for after != "" {
+				log.Printf("Pushing logs: From "+get_log_time(audit_logs[0]).String()+" to "+get_log_time(audit_logs[len(audit_logs)-1]).String()+"\n", len(audit_logs))
+				push_logs(log_forward_client, audit_logs)
+				persist_cursor(after)
+				audit_logs, _, after, _, _ = get_enterprise_logs(github_client, github_enterprise, "asc", "", after)
+			}
 		}
 	}
 }
