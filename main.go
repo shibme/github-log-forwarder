@@ -22,7 +22,17 @@ var github_token = os.Getenv("GHLF_GITHUB_ENTERPRISE_ADMIN_TOKEN")
 var github_enterprise = os.Getenv("GHLF_GITHUB_ENTERPRISE_ID")
 var log_forward_endpoint_url = os.Getenv("GHLF_LOGGING_ENDPOINT_URL")
 var log_forward_endpoint_auth_header = os.Getenv("GHLF_LOGGING_ENDPOINT_AUTH_HEADER")
+var log_forward_endpoint_response_code_str = os.Getenv("GHLF_LOGGING_ENDPOINT_EXPECTED_RESPONSE_CODE")
+var log_forward_endpoint_response_code = get_logging_endpoint_response_code()
 var processing_interval = os.Getenv("GHLF_PROCESSING_INTERVAL")
+
+func get_logging_endpoint_response_code() int {
+	expected_response_code, err := strconv.ParseInt(log_forward_endpoint_response_code_str, 10, 32)
+	if err != nil {
+		log.Fatal("Please set GHLF_LOGGING_ENDPOINT_EXPECTED_RESPONSE_CODE")
+	}
+	return int(expected_response_code)
+}
 
 func extract_url(link string) string {
 	split := strings.Split(link, "<")
@@ -118,9 +128,12 @@ func get_log_forward_client() *resty.Client {
 }
 
 func push_logs(log_forward_client resty.Client, logs []map[string]interface{}) {
-	log_forward_client.R().
+	resp, _ := log_forward_client.R().
 		SetBody(logs).
 		Post("")
+	if resp.StatusCode() != log_forward_endpoint_response_code {
+		log.Fatal("Something went wrong while trying to push logs:\n" + string(resp.Body()))
+	}
 }
 
 func check(e error) {
