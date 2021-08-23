@@ -119,12 +119,15 @@ func get_github_client() *resty.Client {
 }
 
 func get_log_forward_client() *resty.Client {
-	if log_forward_endpoint_url == "" || log_forward_endpoint_auth_header == "" {
-		log.Fatal("Please set GHLF_LOGGING_ENDPOINT_URL and GHLF_LOGGING_ENDPOINT_AUTH_HEADER to forward logs.")
+	if log_forward_endpoint_url == "" {
+		log.Fatal("Please set GHLF_LOGGING_ENDPOINT_URL to forward logs.")
 	}
-	return resty.New().SetHostURL(log_forward_endpoint_url).
-		SetHeader("User-Agent", ghlf_user_agent).
-		SetHeader("Authorization", log_forward_endpoint_auth_header)
+	log_forward_client := resty.New().SetHostURL(log_forward_endpoint_url).
+		SetHeader("User-Agent", ghlf_user_agent)
+	if log_forward_endpoint_auth_header != "" {
+		log_forward_client.SetHeader("Authorization", log_forward_endpoint_auth_header)
+	}
+	return log_forward_client
 }
 
 func push_logs(log_forward_client resty.Client, logs []map[string]interface{}) {
